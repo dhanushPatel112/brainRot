@@ -3,11 +3,12 @@ on: workflow_dispatch
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 17 }
-      - uses: android-actions/setup-android@v3
-      - run: chmod +x gradlew && ./gradlew :app:assembleDebug
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew && ./gradlew :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with: { name: brainrot-apk, path: app/build/outputs/apk/debug/*.apk }
