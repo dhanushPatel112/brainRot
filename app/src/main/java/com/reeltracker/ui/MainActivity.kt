@@ -1,11 +1,13 @@
 package com.reeltracker.ui
 
+import android.Manifest
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.text.format.DateFormat
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -21,9 +23,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.reeltracker.service.ReelAccessibilityService
-import com.reeltracker.service.ReelServiceState
 import com.reeltracker.service.ReelWidgetProvider
+import com.reeltracker.service.Setup
+import com.reeltracker.service.UsageMonitor
+import com.reeltracker.service.UsageService
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -33,38 +36,78 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        askForNotificationsOnce()
         setContent {
             ReelTheme {
                 val context = LocalContext.current
-                val stats by vm.stats.collectAsStateWithLifecycle()
-                val last by vm.lastEventAt.collectAsStateWithLifecycle()
-                val exportMessage by vm.exportMessage.collectAsStateWithLifecycle()
+                val usage by vm.usage.collectAsStateWithLifecycle()
 
-                var tracking by remember { mutableStateOf(trackingState(context)) }
+                var setup by remember { mutableStateOf(setupState(context)) }
                 var is24h by remember { mutableStateOf(DateFormat.is24HourFormat(context)) }
                 LifecycleResumeEffect(Unit) {
-                    tracking = trackingState(context)
+                    setup = setupState(context)
                     is24h = DateFormat.is24HourFormat(context)
-                    // Catches the widget up if the service was stopped while counts changed.
+                    // Coming back from Settings with both permissions: start watching straight away.
+                    UsageService.start(context)
                     ReelWidgetProvider.refresh(context)
                     onPauseOrDispose { }
                 }
 
+                val now = rememberNow()
+                // Re-read every second: the service's live state, or what it last saved.
+                val snapshot = remember(now) { UsageMonitor.current(context) }
+                val status = when {
+                    !setup.ready -> Status.SetupNeeded
+                    UsageMonitor.running -> Status.Watching
+                    else -> Status.Stopped
+                }
+
                 TodayScreen(
-                    now = rememberNow(),
-                    stats = stats,
-                    lastEventAt = last,
-                    tracking = tracking,
+                    now = now,
+                    usage = usage,
+                    snapshot = snapshot,
+                    status = status,
+                    setup = setup,
                     is24h = is24h,
-                    exportMessage = exportMessage,
-                    onOpenAccessibility = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
-                    onExport = vm::exportCapture,
+                    onUsageAccess = { open(Setup.usageAccessIntent(context)) },
+                    onOverlay = { open(Setup.overlayIntent(context)) },
+                    onBattery = { open(Setup.batteryIntent(context)) },
+                    onStart = { UsageService.start(context) },
+                    onLimits = vm::requestLimits,
                     onAddWidget = { requestWidget(context) },
                 )
             }
         }
     }
+
+    private fun open(intent: Intent) {
+        try {
+            startActivity(intent)
+        } catch (_: RuntimeException) {
+            Toast.makeText(this, "Couldn't open that settings screen on this phone.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** The service's notification is hidden without this on Android 13+; the limits work either way. */
+    private fun askForNotificationsOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = getSharedPreferences("ui", MODE_PRIVATE)
+        if (prefs.getBoolean("asked_notifications", false)) return
+        prefs.edit().putBoolean("asked_notifications", true).apply()
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
+    }
 }
+
+data class SetupState(val usageAccess: Boolean, val overlay: Boolean, val battery: Boolean) {
+    val ready: Boolean get() = usageAccess && overlay
+}
+
+private fun setupState(context: Context) = SetupState(
+    usageAccess = Setup.hasUsageAccess(context),
+    overlay = Setup.canDrawOverlays(context),
+    battery = Setup.ignoresBatteryOptimizations(context),
+)
 
 /** Wall clock, ticking on each second boundary. */
 @Composable
@@ -93,17 +136,5 @@ private fun requestWidget(context: Context) {
             "Long-press your home screen, tap Widgets, and add Brainrot.",
             Toast.LENGTH_LONG,
         ).show()
-    }
-}
-
-private fun trackingState(context: Context): Tracking {
-    val me = ComponentName(context, ReelAccessibilityService::class.java)
-    val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-        ?.split(':')
-        ?.any { ComponentName.unflattenFromString(it) == me } == true
-    return when {
-        !enabled -> Tracking.Off
-        ReelServiceState.connected -> Tracking.On
-        else -> Tracking.Stalled
     }
 }

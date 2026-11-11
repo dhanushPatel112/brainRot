@@ -22,14 +22,15 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * The floating counter: a brain that rots as today's reel count climbs.
+ * The floating timer badge: a brain that rots as today's Instagram minutes climb, over a pill
+ * that reads "today · this session".
  *
  *  - idle      the brain breathes
- *  - +1 reel   it squishes and sheds a drop (sweat, then slime once it turns green)
+ *  - +1 minute it squishes and sheds a drop (sweat, then slime once it turns green)
  *  - new stage lightning, a shockwave ring, a shake, and the brain swaps to the next sprite
  *  - stages 5+ smoke curls off the top, continuously
  *
- * Plain Views, not Compose: it lives in an accessibility overlay window. Every child is drawn
+ * Plain Views, not Compose: it lives in an overlay window. Every child is drawn
  * inside this view's bounds, because an overlay window clips anything that spills outside it.
  */
 @SuppressLint("ViewConstructor")
@@ -40,7 +41,7 @@ internal class BrainCounterView(context: Context) : FrameLayout(context) {
     private val fx = FrameLayout(context) // one-shot effects are added and removed here
     private val smoke = List(3) { ImageView(context) }
 
-    private var count: Int? = null
+    private var minutes: Int? = null
     private var stage = 0
     private val breathing: AnimatorSet
     private var smokeLoop: ValueAnimator? = null
@@ -56,7 +57,7 @@ internal class BrainCounterView(context: Context) : FrameLayout(context) {
             v.alpha = 0f
             addView(v, LayoutParams(dp(18), dp(26)).apply {
                 gravity = Gravity.TOP or Gravity.START
-                leftMargin = dp(20 + i * 18)
+                leftMargin = dp((W - BRAIN_W) / 2 + 5 + i * 18)
                 topMargin = dp(BRAIN_TOP - 16)
             })
         }
@@ -75,9 +76,10 @@ internal class BrainCounterView(context: Context) : FrameLayout(context) {
         badge.apply {
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             gravity = Gravity.CENTER
             minWidth = dp(30)
+            maxLines = 1
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(dp(8), dp(1), dp(8), dp(2))
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat()
@@ -98,7 +100,7 @@ internal class BrainCounterView(context: Context) : FrameLayout(context) {
             )
         }
 
-        contentDescription = context.getString(R.string.overlay_description, 0)
+        contentDescription = context.getString(R.string.overlay_description, "–")
     }
 
     override fun onAttachedToWindow() {
@@ -115,27 +117,28 @@ internal class BrainCounterView(context: Context) : FrameLayout(context) {
     }
 
     /**
-     * Shows [newCount]. The first value after attaching is shown without fuss; after that an
-     * increase plays the per-reel animation, and crossing a threshold plays the stage-up one.
+     * Shows today's [totalMinutes] as the brain's stage and [label] in the pill. The first value
+     * after attaching is shown without fuss; after that each new minute plays the drip, and
+     * crossing a threshold plays the stage-up.
      */
-    fun setCount(newCount: Int) {
-        val previous = count
-        count = newCount
-        badge.text = newCount.toString()
-        contentDescription = context.getString(R.string.overlay_description, newCount)
+    fun setUsage(totalMinutes: Int, label: String) {
+        badge.text = label
+        contentDescription = context.getString(R.string.overlay_description, label)
 
-        val newStage = BrainRot.stage(newCount)
-        if (previous == null || newCount < previous) {
+        val previous = minutes
+        minutes = totalMinutes
+        val newStage = BrainRot.stage(totalMinutes)
+        if (previous == null || totalMinutes < previous) {
             // First value, or a new day: no celebration, just the right state.
             applyStage(newStage)
             return
         }
-        if (newCount == previous) return
+        if (totalMinutes == previous) return
 
         if (newStage > stage) {
             stageUp(newStage)
         } else {
-            reelCounted()
+            minutePassed()
         }
     }
 
@@ -149,7 +152,7 @@ internal class BrainCounterView(context: Context) : FrameLayout(context) {
 
     // ------------------------------------------------------------------ animations
 
-    private fun reelCounted() {
+    private fun minutePassed() {
         squish()
         popBadge()
         dropFrom(if (BrainRot.isSlimy(stage)) R.drawable.fx_drop_green else R.drawable.fx_drop_blue)
@@ -297,7 +300,7 @@ internal class BrainCounterView(context: Context) : FrameLayout(context) {
 
     companion object {
         /** Window size in dp: room above the brain for smoke and bolts, below for drops and the badge. */
-        const val W = 92
+        const val W = 128
         const val H = 104
         private const val BRAIN_W = 62
         private const val BRAIN_H = 52

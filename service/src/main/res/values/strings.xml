@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="service_label">Brainrot</string>
-    <string name="service_description">Counts the Instagram Reels you swipe through, on this phone only. Reads which list scrolled and its position; never reads captions, usernames or messages. Makes no network calls.</string>
-    <string name="overlay_description">%1$d reels today. Drag to move.</string>
-    <string name="widget_label">Reels today</string>
-    <string name="widget_description">Today\'s reel count, and how rotten your brain is.</string>
-    <string name="widget_reels_today">reels today</string>
+    <string name="overlay_description">Instagram today and this session: %1$s. Drag to move.</string>
+    <string name="widget_label">Instagram today</string>
+    <string name="widget_description">Today\'s Instagram time, and how rotten your brain is.</string>
+    <string name="widget_reels_today">on Instagram</string>
 </resources>

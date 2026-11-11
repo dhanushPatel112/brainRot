@@ -15,7 +15,7 @@ android {
 }
 
 dependencies {
-    api(project(":core-detect"))
     api(project(":core-data"))
+    implementation(libs.core.ktx)
     implementation(libs.coroutines.android)
 }

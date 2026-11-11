@@ -31,12 +31,13 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.min
 
 /**
- * Reels per hour of the day, one series. Tap a column to read it; the busiest hour is labelled
+ * Minutes on Instagram per hour of the day, one series. Tap a column to read it; the busiest hour is labelled
  * by default. Specs per the dataviz guide: <= 24dp columns, 2dp gap, 4dp rounded cap square at
  * the baseline, hairline axis, text in text tokens, never the series colour.
  */
 @Composable
 fun HourlyChart(hourly: List<Int>, currentHour: Int, is24h: Boolean, modifier: Modifier = Modifier) {
+    val empty = "No Instagram yet today"
     val p = LocalPalette.current
     val measurer = rememberTextMeasurer()
     var selected by remember(hourly) { mutableStateOf<Int?>(null) }
@@ -49,7 +50,7 @@ fun HourlyChart(hourly: List<Int>, currentHour: Int, is24h: Boolean, modifier: M
         Row {
             Text(
                 text = when {
-                    focus == null -> "No reels yet today"
+                    focus == null -> empty
                     selected == null -> "Busiest  ${hourRange(focus, is24h)}"
                     else -> hourRange(focus, is24h)
                 },
@@ -59,7 +60,7 @@ fun HourlyChart(hourly: List<Int>, currentHour: Int, is24h: Boolean, modifier: M
             )
             if (focus != null) {
                 Text(
-                    text = "${hourly[focus]} reels",
+                    text = "${hourly[focus]} min",
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = p.textPrimary,
                 )
@@ -73,7 +74,7 @@ fun HourlyChart(hourly: List<Int>, currentHour: Int, is24h: Boolean, modifier: M
             Modifier
                 .fillMaxWidth()
                 .height(148.dp)
-                .semantics { contentDescription = describe(hourly, is24h) }
+                .semantics { contentDescription = describe(hourly, is24h, empty) }
                 .pointerInput(hourly) {
                     detectTapGestures { o ->
                         val h = (o.x / (size.width / 24f)).toInt().coerceIn(0, 23)
@@ -137,7 +138,7 @@ private fun axisLabel(h: Int, is24h: Boolean): String =
 private fun hourRange(h: Int, is24h: Boolean): String =
     "${hourLabel(h, is24h)} – ${hourLabel((h + 1) % 24, is24h)}"
 
-private fun describe(hourly: List<Int>, is24h: Boolean): String =
+private fun describe(hourly: List<Int>, is24h: Boolean, empty: String): String =
     hourly.withIndex().filter { it.value > 0 }
-        .joinToString(prefix = "Reels by hour. ", separator = ", ") { "${hourLabel(it.index, is24h)}: ${it.value}" }
-        .ifEmpty { "No reels yet today" }
+        .joinToString(prefix = "Instagram minutes by hour. ", separator = ", ") { "${hourLabel(it.index, is24h)}: ${it.value} min" }
+        .ifEmpty { empty }
