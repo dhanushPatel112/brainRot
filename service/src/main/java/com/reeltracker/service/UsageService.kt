@@ -5,14 +5,17 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -28,13 +31,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Foreground service: once a second, asks which app is in front, runs the rules, and draws the
- * result over Instagram. Uses usage access and "display over other apps" only. No accessibility
+ * Foreground service: asks which app is in front, runs the rules, and draws the result over
+ * Instagram. Ticks once a second while Instagram is in front, every [IDLE_TICK_MS] otherwise, and
+ * not at all while the screen is off. Uses usage access and "display over other apps" only. No accessibility
  * service, so payment apps have nothing to complain about.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -62,6 +67,29 @@ class UsageService : Service(), OverlayHost.Actions {
     private var shownMinute = -1
     private var focus: AudioFocusRequest? = null
 
+    /** Cached permission checks, refreshed every [PERMISSION_CHECK_MS] and when the screen comes on. */
+    private var canWatch = false
+    private var canDraw = false
+    private var permissionsCheckedAt = 0L
+
+    /** False while the screen is off: nothing can be in front, so the loop waits for [wake]. */
+    @Volatile private var screenOn = true
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> screenOn = false
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                    screenOn = true
+                    permissionsCheckedAt = 0L
+                }
+            }
+            // Either way, tick now: off closes the slice and clears overlays, on catches up.
+            wake.trySend(Unit)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         startInForeground(notification("Starting…"))
@@ -72,10 +100,24 @@ class UsageService : Service(), OverlayHost.Actions {
         audio = getSystemService(AudioManager::class.java)
         state = store.loadState(UsageDay.of(System.currentTimeMillis()))
         UsageMonitor.running = true
+        screenOn = getSystemService(PowerManager::class.java).isInteractive
+        registerReceiver(
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+            },
+        )
         scope.launch {
             while (isActive) {
                 step()
-                delay(TICK_MS - System.currentTimeMillis() % TICK_MS)
+                if (screenOn) {
+                    // Woken early by a screen change; otherwise the next tick on the interval.
+                    withTimeoutOrNull(nextTickDelay()) { wake.receive() }
+                } else {
+                    wake.receive()
+                }
             }
         }
     }
@@ -86,6 +128,7 @@ class UsageService : Service(), OverlayHost.Actions {
 
     override fun onDestroy() {
         UsageMonitor.running = false
+        runCatching { unregisterReceiver(screenReceiver) }
         scope.cancel()
         overlay.clear()
         releaseAudio()
@@ -100,16 +143,16 @@ class UsageService : Service(), OverlayHost.Actions {
         val now = System.currentTimeMillis()
         val day = UsageDay.of(now)
         limits = store.limits(day)
+        refreshPermissions(now)
         // Without either permission nothing can be seen or drawn; keep the day ticking regardless.
-        val canWork = Setup.ready(this)
-        val inFront = canWork && watcher.isInFront(INSTAGRAM, now)
+        val inFront = screenOn && canWatch && canDraw && watcher.isInFront(INSTAGRAM, now)
         state = LimitEngine.tick(state, limits, now, day, inFront)
         apply(now)
     }
 
     private fun apply(now: Long) {
         val screen = LimitEngine.screen(state, limits)
-        if (Setup.canDrawOverlays(this)) overlay.render(screen, limits) else overlay.clear()
+        if (canDraw) overlay.render(screen, limits) else overlay.clear()
         holdAudio(screen.block != null)
         recordSlice(now)
         save(now)
@@ -121,6 +164,19 @@ class UsageService : Service(), OverlayHost.Actions {
             getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(statusText()))
         }
         UsageMonitor.publish(UsageMonitor.Snapshot(state, limits, store.pending()))
+    }
+
+    /** Every second while Instagram is in front (aligned to the second), else every [IDLE_TICK_MS]. */
+    private fun nextTickDelay(): Long {
+        val tick = if (state.foreground) TICK_MS else IDLE_TICK_MS
+        return tick - System.currentTimeMillis() % tick
+    }
+
+    private fun refreshPermissions(now: Long) {
+        if (now - permissionsCheckedAt < PERMISSION_CHECK_MS) return
+        permissionsCheckedAt = now
+        canWatch = Setup.hasUsageAccess(this)
+        canDraw = Setup.canDrawOverlays(this)
     }
 
     // ------------------------------------------------------------------ overlay actions
@@ -173,10 +229,15 @@ class UsageService : Service(), OverlayHost.Actions {
         }
     }
 
-    /** Saves at once when anything but the clocks changed, else every few seconds. */
+    /**
+     * Saves at once when anything but the clocks changed, every few seconds while time is being
+     * counted, and not at all when only [LimitState.lastTickAt] moved (idle ticks).
+     */
     private fun save(now: Long) {
-        val flagsChanged = savedState?.let { it.withoutClocks() != state.withoutClocks() } ?: true
-        if (flagsChanged || now - lastSaveAt >= SAVE_MS) {
+        val saved = savedState
+        val flagsChanged = saved?.let { it.withoutClocks() != state.withoutClocks() } ?: true
+        val clocksMoved = saved?.let { it.copy(lastTickAt = null) != state.copy(lastTickAt = null) } ?: true
+        if (flagsChanged || (clocksMoved && now - lastSaveAt >= SAVE_MS)) {
             store.saveState(state)
             savedState = state
             lastSaveAt = now
@@ -254,6 +315,8 @@ class UsageService : Service(), OverlayHost.Actions {
         const val INSTAGRAM = "com.instagram.android"
 
         private const val TICK_MS = 1_000L
+        private const val IDLE_TICK_MS = 5_000L
+        private const val PERMISSION_CHECK_MS = 30_000L
         private const val FLUSH_MS = 15_000L
         private const val SAVE_MS = 5_000L
         private const val CHANNEL = "status"
