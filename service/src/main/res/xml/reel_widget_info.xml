@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The service pushes a new count on every reel. updatePeriodMillis (30 min, Android's minimum)
-  is only the fallback that rolls the widget over to 0 after midnight when nothing is watched.
+  The service pushes the time every new minute. updatePeriodMillis (30 min, Android's minimum)
+  is only the fallback that rolls the widget over to 0 after the 4 AM reset when nothing is watched.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_description"
