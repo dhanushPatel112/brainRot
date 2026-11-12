@@ -1,6 +1,6 @@
 package com.reeltracker.limits
 
-/** One stretch of counted Instagram time: in front, not covered by a pause or popup. */
+/** One stretch of counted time in one app: in front, not covered by a pause or popup. */
 data class Slice(val start: Long, val end: Long) {
     val durationMs: Long get() = end - start
 }

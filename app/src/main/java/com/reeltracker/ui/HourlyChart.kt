@@ -31,13 +31,13 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.min
 
 /**
- * Minutes on Instagram per hour of the day, one series. Tap a column to read it; the busiest hour is labelled
+ * Minutes in [appLabel] per hour of the day, one series. Tap a column to read it; the busiest hour is labelled
  * by default. Specs per the dataviz guide: <= 24dp columns, 2dp gap, 4dp rounded cap square at
  * the baseline, hairline axis, text in text tokens, never the series colour.
  */
 @Composable
-fun HourlyChart(hourly: List<Int>, currentHour: Int, is24h: Boolean, modifier: Modifier = Modifier) {
-    val empty = "No Instagram yet today"
+fun HourlyChart(hourly: List<Int>, appLabel: String, currentHour: Int, is24h: Boolean, modifier: Modifier = Modifier) {
+    val empty = "No $appLabel yet today"
     val p = LocalPalette.current
     val measurer = rememberTextMeasurer()
     var selected by remember(hourly) { mutableStateOf<Int?>(null) }
@@ -74,7 +74,7 @@ fun HourlyChart(hourly: List<Int>, currentHour: Int, is24h: Boolean, modifier: M
             Modifier
                 .fillMaxWidth()
                 .height(148.dp)
-                .semantics { contentDescription = describe(hourly, is24h, empty) }
+                .semantics { contentDescription = describe(hourly, appLabel, is24h, empty) }
                 .pointerInput(hourly) {
                     detectTapGestures { o ->
                         val h = (o.x / (size.width / 24f)).toInt().coerceIn(0, 23)
@@ -138,7 +138,7 @@ private fun axisLabel(h: Int, is24h: Boolean): String =
 private fun hourRange(h: Int, is24h: Boolean): String =
     "${hourLabel(h, is24h)} – ${hourLabel((h + 1) % 24, is24h)}"
 
-private fun describe(hourly: List<Int>, is24h: Boolean, empty: String): String =
+private fun describe(hourly: List<Int>, appLabel: String, is24h: Boolean, empty: String): String =
     hourly.withIndex().filter { it.value > 0 }
-        .joinToString(prefix = "Instagram minutes by hour. ", separator = ", ") { "${hourLabel(it.index, is24h)}: ${it.value} min" }
+        .joinToString(prefix = "$appLabel minutes by hour. ", separator = ", ") { "${hourLabel(it.index, is24h)}: ${it.value} min" }
         .ifEmpty { empty }

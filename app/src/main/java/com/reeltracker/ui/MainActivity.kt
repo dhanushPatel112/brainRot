@@ -19,10 +19,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.reeltracker.limits.TrackedApp
 import com.reeltracker.service.ReelWidgetProvider
 import com.reeltracker.service.Setup
 import com.reeltracker.service.UsageMonitor
@@ -40,7 +42,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             ReelTheme {
                 val context = LocalContext.current
-                val usage by vm.usage.collectAsStateWithLifecycle()
+                var app by rememberSaveable { mutableStateOf(TrackedApp.INSTAGRAM) }
+                val usage by vm.usage.getValue(app).collectAsStateWithLifecycle()
 
                 var setup by remember { mutableStateOf(setupState(context)) }
                 var is24h by remember { mutableStateOf(DateFormat.is24HourFormat(context)) }
@@ -55,7 +58,8 @@ class MainActivity : ComponentActivity() {
 
                 val now = rememberNow()
                 // Re-read every second: the service's live state, or what it last saved.
-                val snapshot = remember(now) { UsageMonitor.current(context) }
+                val snapshot = remember(now, app) { UsageMonitor.current(context, app) }
+                val minutes = remember(now) { UsageMonitor.todayMinutes(context) }
                 val status = when {
                     !setup.ready -> Status.SetupNeeded
                     UsageMonitor.running -> Status.Watching
@@ -64,6 +68,8 @@ class MainActivity : ComponentActivity() {
 
                 TodayScreen(
                     now = now,
+                    app = app,
+                    minutes = minutes,
                     usage = usage,
                     snapshot = snapshot,
                     status = status,
@@ -73,7 +79,8 @@ class MainActivity : ComponentActivity() {
                     onOverlay = { open(Setup.overlayIntent(context)) },
                     onBattery = { open(Setup.batteryIntent(context)) },
                     onStart = { UsageService.start(context) },
-                    onLimits = vm::requestLimits,
+                    onSelectApp = { app = it },
+                    onLimits = { budget, cap -> vm.requestLimits(app, budget, cap) },
                     onAddWidget = { requestWidget(context) },
                 )
             }

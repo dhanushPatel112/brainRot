@@ -1,12 +1,13 @@
 package com.reeltracker.service
 
 /**
- * How rotten today's brain is. One place maps today's Instagram minutes to a sprite, so the
+ * How rotten today's brain is. One place maps today's minutes (Instagram and YouTube added
+ * together) to a sprite, so the
  * overlay, the home-screen widget and the app can never disagree.
  */
 object BrainRot {
 
-    /** Stage i is reached at [THRESHOLDS][i] minutes on Instagram today. */
+    /** Stage i is reached at [THRESHOLDS][i] minutes across all tracked apps today. */
     private val THRESHOLDS = intArrayOf(0, 5, 15, 30, 45, 60, 90)
 
     private val SPRITES = intArrayOf(

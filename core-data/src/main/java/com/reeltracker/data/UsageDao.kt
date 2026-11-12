@@ -14,7 +14,7 @@ interface UsageDao {
     @Query("UPDATE usage_slices SET endedAt = :end WHERE id = :id")
     suspend fun setEnd(id: Long, end: Long)
 
-    /** Slices that overlap [from, ∞), oldest first. */
-    @Query("SELECT * FROM usage_slices WHERE endedAt > :from ORDER BY startedAt")
-    fun since(from: Long): Flow<List<UsageSlice>>
+    /** [app]'s slices that overlap [from, ∞), oldest first. */
+    @Query("SELECT * FROM usage_slices WHERE app = :app AND endedAt > :from ORDER BY startedAt")
+    fun since(app: String, from: Long): Flow<List<UsageSlice>>
 }

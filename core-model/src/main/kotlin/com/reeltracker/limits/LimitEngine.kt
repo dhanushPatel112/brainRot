@@ -5,12 +5,13 @@ package com.reeltracker.limits
  * [tick] per second and draws whatever [screen] says. Everything here is a pure function of
  * (state, limits, time), so the whole policy runs in plain JVM tests.
  *
- * Time only counts while Instagram is in front AND no pause or popup is covering it, so sitting
- * on a pause screen never eats into the budget.
+ * One app's rules: each [TrackedApp] runs its own state through here. Time only counts while
+ * the app is in front AND no pause or popup is covering it, so sitting on a pause screen never
+ * eats into the budget.
  */
 object LimitEngine {
 
-    /** Away from Instagram for at least this long ends the session (resets the 10-min cap). */
+    /** Away from the app for at least this long ends the session (resets the 10-min cap). */
     const val SESSION_GAP_MS = 2 * 60_000L
 
     /** After the budget, a pause comes back after every this-much counted use. */
@@ -37,7 +38,7 @@ object LimitEngine {
      * Advances the state to [now].
      *
      * @param day the usage day [now] falls in (see [UsageDay]); a change resets the daily budget
-     * @param foreground Instagram is the app on screen and the screen is on
+     * @param foreground the app is on screen and the screen is on
      */
     fun tick(s: LimitState, limits: Limits, now: Long, day: Long, foreground: Boolean): LimitState {
         var st = if (day != s.day) s.newDay(day) else s
@@ -74,7 +75,7 @@ object LimitEngine {
         return st
     }
 
-    /** Instagram just came to the front. */
+    /** The app just came to the front. */
     private fun enter(s: LimitState, limits: Limits, now: Long): LimitState {
         val away = s.lastActiveAt?.let { now - it }
         var st = s.copy(foreground = true)
@@ -104,7 +105,7 @@ object LimitEngine {
         if (!s.popupPending) s
         else s.copy(popupPending = false, nextPopupAtSessionMs = s.sessionUsedMs + POPUP_EVERY_MS)
 
-    /** What to draw over Instagram right now. */
+    /** What to draw over the app right now. */
     fun screen(s: LimitState, limits: Limits): Screen {
         if (!s.foreground) return Screen.NONE
         val block = when {
@@ -133,7 +134,7 @@ data class Limits(
  */
 data class LimitState(
     val day: Long,
-    /** Counted Instagram time on [day]. */
+    /** Counted time in the app on [day]. */
     val usedMs: Long = 0,
     /** Pauses sat through today; sets the length of the next one. */
     val pausesDone: Int = 0,
@@ -145,7 +146,7 @@ data class LimitState(
     /** [sessionUsedMs] at which the next session popup is due; null means the cap itself. */
     val nextPopupAtSessionMs: Long? = null,
     val popupPending: Boolean = false,
-    /** Last time Instagram was seen in front; the session gap is measured from here. */
+    /** Last time the app was seen in front; the session gap is measured from here. */
     val lastActiveAt: Long? = null,
     val lastTickAt: Long? = null,
     val foreground: Boolean = false,

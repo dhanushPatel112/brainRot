@@ -1,6 +1,7 @@
 package com.reeltracker.data
 
 import com.reeltracker.limits.Slice
+import com.reeltracker.limits.TrackedApp
 import com.reeltracker.limits.UsageDay
 import com.reeltracker.limits.UsageStats
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -13,20 +14,20 @@ import kotlinx.coroutines.flow.map
 import java.time.Instant
 import java.time.ZoneId
 
-/** History of Instagram time, for the Today screen. The live limits do not read from here. */
+/** History of time per app, for the Today screen. The live limits do not read from here. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class UsageRepository internal constructor(private val dao: UsageDao) {
 
-    /** Today's usage (4 AM to 4 AM), recomputed whenever a slice is written or the day turns. */
-    val today: Flow<UsageStats> = dayStarts().flatMapLatest { start ->
+    /** [app]'s usage today (4 AM to 4 AM), recomputed whenever a slice is written or the day turns. */
+    fun today(app: TrackedApp): Flow<UsageStats> = dayStarts().flatMapLatest { start ->
         val zone = ZoneId.systemDefault()
-        dao.since(start).map { rows ->
+        dao.since(app.id, start).map { rows ->
             val slices = rows.map { Slice(maxOf(it.startedAt, start), it.endedAt) }.filter { it.durationMs > 0 }
             UsageStats.from(slices) { Instant.ofEpochMilli(it).atZone(zone).hour }
         }
     }
 
-    suspend fun open(at: Long): Long = dao.insert(UsageSlice(startedAt = at, endedAt = at))
+    suspend fun open(app: TrackedApp, at: Long): Long = dao.insert(UsageSlice(startedAt = at, endedAt = at, app = app.id))
 
     suspend fun extend(id: Long, end: Long) = dao.setEnd(id, end)
 

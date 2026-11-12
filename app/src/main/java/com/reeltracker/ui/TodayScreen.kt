@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reeltracker.limits.Badge
 import com.reeltracker.limits.LimitEngine
+import com.reeltracker.limits.TrackedApp
 import com.reeltracker.limits.UsageSession
 import com.reeltracker.limits.UsageStats
 import com.reeltracker.service.BrainRot
@@ -64,6 +65,10 @@ private val tnum = TextStyle(fontFeatureSettings = "tnum")
 @Composable
 fun TodayScreen(
     now: Long,
+    /** The app whose numbers and limits the screen shows. */
+    app: TrackedApp,
+    /** Every app's minutes today; the brain follows their total. */
+    minutes: Map<TrackedApp, Int>,
     usage: UsageStats,
     snapshot: UsageMonitor.Snapshot,
     status: Status,
@@ -73,13 +78,13 @@ fun TodayScreen(
     onOverlay: () -> Unit,
     onBattery: () -> Unit,
     onStart: () -> Unit,
+    onSelectApp: (TrackedApp) -> Unit,
     onLimits: (budgetMin: Int, capMin: Int) -> Unit,
     onAddWidget: () -> Unit,
 ) {
     val p = LocalPalette.current
     val clock = Clock(is24h)
     val bars = WindowInsets.systemBars.asPaddingValues()
-    val usedMs = snapshot.state.usedMs
 
     LazyColumn(
         modifier = Modifier
@@ -95,16 +100,17 @@ fun TodayScreen(
         item { Header(now, clock, status, onStart) }
         if (!setup.ready || !setup.battery) item { SetupCard(setup, onUsageAccess, onOverlay, onBattery) }
         if (setup.ready && status == Status.Stopped) item { StoppedCard(onStart) }
-        item { Hero(snapshot) }
-        item { BrainCard((usedMs / 60_000).toInt(), onAddWidget) }
+        item { AppSwitch(app, minutes, onSelectApp) }
+        item { Hero(app, snapshot) }
+        item { BrainCard(minutes.values.sum(), onAddWidget) }
         item { StatRow(usage, snapshot.state.pausesDone) }
         item {
             Panel("By hour") {
-                HourlyChart(usage.hourlyMinutes, currentHour = java.time.LocalTime.now().hour, is24h = is24h)
+                HourlyChart(usage.hourlyMinutes, app.label, currentHour = java.time.LocalTime.now().hour, is24h = is24h)
             }
         }
-        item { Sessions(usage, now, clock) }
-        item { LimitsCard(snapshot, onLimits) }
+        item { Sessions(app, usage, now, clock) }
+        item { LimitsCard(app, snapshot, onLimits) }
         item { Footer() }
     }
 }
@@ -178,7 +184,7 @@ private fun SetupCard(setup: SetupState, onUsageAccess: () -> Unit, onOverlay: (
         SetupRow(
             done = setup.usageAccess,
             title = "Usage access",
-            body = "Lets Brainrot see when Instagram is open. Find Brainrot in the list and allow it.",
+            body = "Lets Brainrot see when Instagram or YouTube is open. Find Brainrot in the list and allow it.",
             onClick = onUsageAccess,
         )
         Spacer(Modifier.height(14.dp))
@@ -254,14 +260,54 @@ private fun StoppedCard(onStart: () -> Unit) {
 
 // ------------------------------------------------------------------ today
 
+/** Instagram | YouTube, each with today's minutes. Picks whose numbers and limits show below. */
 @Composable
-private fun Hero(snapshot: UsageMonitor.Snapshot) {
+private fun AppSwitch(selected: TrackedApp, minutes: Map<TrackedApp, Int>, onSelect: (TrackedApp) -> Unit) {
+    val p = LocalPalette.current
+    Row(
+        Modifier
+            .padding(top = 10.dp)
+            .fillMaxWidth()
+            .clip(CircleShape)
+            .background(p.card)
+            .padding(4.dp),
+    ) {
+        TrackedApp.entries.forEach { app ->
+            val on = app == selected
+            Row(
+                Modifier
+                    .weight(1f)
+                    .clip(CircleShape)
+                    .background(if (on) p.accent else Color.Transparent)
+                    .clickable { onSelect(app) }
+                    .padding(vertical = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    app.label,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (on) Color.White else p.textPrimary,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    Badge.short((minutes[app] ?: 0) * 60_000L),
+                    style = tnum.merge(MaterialTheme.typography.labelLarge),
+                    color = if (on) Color.White.copy(alpha = 0.8f) else p.textMuted,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Hero(app: TrackedApp, snapshot: UsageMonitor.Snapshot) {
     val p = LocalPalette.current
     val used = snapshot.state.usedMs
     val budget = snapshot.limits.dailyBudgetMs
     val over = used >= budget
-    Column(Modifier.padding(top = 18.dp, bottom = 6.dp)) {
-        Text("Instagram today", style = MaterialTheme.typography.titleMedium, color = p.textSecondary)
+    Column(Modifier.padding(top = 8.dp, bottom = 6.dp)) {
+        Text("${app.label} today", style = MaterialTheme.typography.titleMedium, color = p.textSecondary)
         AnimatedContent(
             targetState = Badge.short(used),
             transitionSpec = {
@@ -288,7 +334,7 @@ private fun Hero(snapshot: UsageMonitor.Snapshot) {
         Spacer(Modifier.height(8.dp))
         Text(
             if (over) {
-                "Over your ${Badge.short(budget)} budget. Instagram is grey for the rest of the day, " +
+                "Over your ${Badge.short(budget)} budget. ${app.label} is grey for the rest of the day, " +
                     "and the next pause is ${LimitEngine.pauseSeconds(snapshot.state.pausesDone)}s."
             } else {
                 "${Badge.short(budget - used)} left of your ${Badge.short(budget)} budget"
@@ -299,7 +345,10 @@ private fun Hero(snapshot: UsageMonitor.Snapshot) {
     }
 }
 
-/** Today's brain, the same sprite the badge and the widget show, and the way to add that widget. */
+/**
+ * Today's brain, the same sprite the badge and the widget show, and the way to add that widget.
+ * [minutes] is every app's time together, whichever app is selected.
+ */
 @Composable
 private fun BrainCard(minutes: Int, onAddWidget: () -> Unit) {
     val p = LocalPalette.current
@@ -327,7 +376,8 @@ private fun BrainCard(minutes: Int, onAddWidget: () -> Unit) {
                 color = p.textPrimary,
             )
             Text(
-                BrainRot.untilNext(minutes)?.let { "$it more minutes until it gets worse" } ?: "It can't get any worse",
+                (BrainRot.untilNext(minutes)?.let { "$it more minutes until it gets worse" } ?: "It can't get any worse") +
+                    ". Instagram and YouTube together.",
                 style = MaterialTheme.typography.bodySmall,
                 color = p.textMuted,
             )
@@ -367,11 +417,11 @@ private fun StatTile(label: String, value: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun Sessions(usage: UsageStats, now: Long, clock: Clock) {
+private fun Sessions(app: TrackedApp, usage: UsageStats, now: Long, clock: Clock) {
     val p = LocalPalette.current
-    Panel("Sessions", subtitle = "2 minutes away from Instagram starts a new session") {
+    Panel("Sessions", subtitle = "2 minutes away from ${app.label} starts a new session") {
         if (usage.sessions.isEmpty()) {
-            Text("No Instagram yet today.", style = MaterialTheme.typography.bodyMedium, color = p.textMuted)
+            Text("No ${app.label} yet today.", style = MaterialTheme.typography.bodyMedium, color = p.textMuted)
             return@Panel
         }
         val longest = usage.sessions.maxOf { it.activeMs }.coerceAtLeast(1)
@@ -423,13 +473,13 @@ private fun SessionRow(s: UsageSession, longest: Long, live: Boolean, clock: Clo
  * and takes over at 4 AM.
  */
 @Composable
-private fun LimitsCard(snapshot: UsageMonitor.Snapshot, onLimits: (Int, Int) -> Unit) {
+private fun LimitsCard(app: TrackedApp, snapshot: UsageMonitor.Snapshot, onLimits: (Int, Int) -> Unit) {
     val p = LocalPalette.current
     val active = snapshot.limits
     val wanted = snapshot.pending ?: active
     val budgetMin = (wanted.dailyBudgetMs / 60_000).toInt()
     val capMin = (wanted.sessionCapMs / 60_000).toInt()
-    Panel("Limits", subtitle = "Changes start tomorrow at 4 AM, so you can't raise them in a weak moment.") {
+    Panel("${app.label} limits", subtitle = "Changes start tomorrow at 4 AM, so you can't raise them in a weak moment.") {
         Stepper(
             label = "Daily budget",
             value = budgetMin,
@@ -449,7 +499,7 @@ private fun LimitsCard(snapshot: UsageMonitor.Snapshot, onLimits: (Int, Int) -> 
         )
         Spacer(Modifier.height(14.dp))
         Text(
-            "After the budget: Instagram turns grey, and a pause (10s, then 10s longer each time, up to 2 min) " +
+            "After the budget: ${app.label} turns grey, and a pause (10s, then 10s longer each time, up to 2 min) " +
                 "comes when you open it and every 5 minutes. After the session limit: grey until you've been away " +
                 "2 minutes, and a check-in every 5 minutes.",
             style = MaterialTheme.typography.bodySmall,

@@ -4,7 +4,7 @@
 
     <!--
       No accessibility service. Payment apps (GPay, Paytm, banks) refuse to work while one is
-      on, so Instagram is watched through usage access and limited with overlays instead.
+      on, so Instagram and YouTube are watched through usage access and limited with overlays instead.
     -->
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
@@ -23,7 +23,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Self-imposed Instagram time limits: tracks time in Instagram and shows a timer, pauses and a grey tint over it." />
+                android:value="Self-imposed Instagram and YouTube time limits: tracks time in each app and shows a timer, pauses and a grey tint over it." />
         </service>
 
         <receiver

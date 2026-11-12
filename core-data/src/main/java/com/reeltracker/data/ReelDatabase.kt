@@ -7,8 +7,11 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-/** Version 2 adds Instagram time. The reel tables from version 1 are kept as history. */
-@Database(entities = [ReelEvent::class, Session::class, UsageSlice::class], version = 2, exportSchema = false)
+/**
+ * Version 2 adds Instagram time; version 3 adds YouTube, so each slice says which app it was.
+ * The reel tables from version 1 are kept as history.
+ */
+@Database(entities = [ReelEvent::class, Session::class, UsageSlice::class], version = 3, exportSchema = false)
 abstract class ReelDatabase : RoomDatabase() {
     abstract fun dao(): ReelDao
     abstract fun usage(): UsageDao
@@ -25,6 +28,13 @@ private val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+/** Every slice so far was Instagram. The default must match [UsageSlice.app]'s, or Room rejects the table. */
+private val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `usage_slices` ADD COLUMN `app` TEXT NOT NULL DEFAULT 'instagram'")
+    }
+}
+
 /** Process-wide wiring. The service and the UI run in one process and share one database. */
 object ReelGraph {
     @Volatile
@@ -33,7 +43,7 @@ object ReelGraph {
     private fun db(context: Context): ReelDatabase =
         db ?: synchronized(this) {
             db ?: Room.databaseBuilder(context.applicationContext, ReelDatabase::class.java, "reels.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 .also { db = it }
         }

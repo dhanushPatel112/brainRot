@@ -2,32 +2,36 @@
 
 <img src="app/src/main/res/drawable-nodpi/ic_launcher_brain.png" width="96" align="right" alt="Brainrot icon">
 
-An Android app that limits your Instagram time, with a brain that rots a little more with every
-minute you spend there.
+An Android app that limits your Instagram and YouTube time, with a brain that rots a little more
+with every minute you spend there.
 
 - **Works without accessibility.** Payment apps (GPay, Paytm, banking apps) refuse to work while an
-  accessibility service is on, so Brainrot uses **usage access** (to see when Instagram is open) and
-  **display over other apps** (to draw on top of it). Payments keep working.
-- **Timer badge.** Whenever Instagram is open, a draggable brain shows `today · this session`,
-  e.g. `23m · 4m`.
-- **Session limit (10 min).** Instagram turns grey, and a popup asks if you want to keep going. Its
+  accessibility service is on, so Brainrot uses **usage access** (to see when Instagram or YouTube is open)
+  and **display over other apps** (to draw on top of it). Payments keep working.
+- **Each app has its own limits and counter.** Defaults: Instagram 30 min a day with a 10 min
+  session limit; YouTube 1 hour a day with a 20 min session limit, so most long videos can finish.
+- **Timer badge.** Whenever Instagram or YouTube is open, a draggable brain shows that app's
+  `today · this session`, e.g. `23m · 4m`.
+- **Session limit.** The app turns grey, and a popup asks if you want to keep going. Its
   layout, colours, wording and button order are shuffled every time, so you can't tap through
   it from muscle memory. It comes back every 5 minutes. A session ends after 2 minutes away.
-- **Daily budget (30 min).** Once it's used up, Instagram stays grey for the rest of the day and
-  can't be switched back. A pause screen with a countdown appears when you open Instagram and every
+- **Daily budget.** Once it's used up, the app stays grey for the rest of the day and
+  can't be switched back. A pause screen with a countdown appears when you open it and every
   5 minutes. It starts at 10 s and gets 10 s longer each time (up to 2 min), for the rest of the day.
 - **Day resets at 4 AM**, so late-night scrolling counts against the day you started it.
 - **Changing a limit applies from tomorrow**, so you can't raise it in a weak moment.
-- **Home-screen widget** and a **Today screen** with minutes, sessions, pauses and minutes per hour.
+- **Home-screen widget** with the total and each app's minutes, and a **Today screen** with an
+  Instagram/YouTube switch for minutes, sessions, pauses, minutes per hour and limits.
 
-It can't tell Reels apart from the rest of Instagram without accessibility. Everything counts
-all of Instagram, and the grey screen is what makes Reels unappealing while chats stay usable.
+It can't tell Reels apart from the rest of Instagram, or Shorts from long videos, without
+accessibility. Everything counts the whole app, and the grey screen is what makes Reels unappealing
+while chats stay usable.
 
 ---
 
 ## The rot
 
-The brain has seven stages, driven by today's Instagram minutes.
+The brain has seven stages, driven by today's Instagram and YouTube minutes added together.
 
 | Minutes today | 0 | 5 | 15 | 30 | 45 | 60 | 90+ |
 |---|---|---|---|---|---|---|---|
@@ -61,18 +65,20 @@ runs all the time.
 
 ```
 UsageStatsManager ──▶ ForegroundWatcher ──▶ UsageService (1 tick/s) ──▶ LimitEngine.tick ──▶ Screen ──▶ OverlayHost
- (usage access)        is Instagram in front?   (foreground service)     (core-model, pure)    badge / grey / pause / popup
-                                                       │
-                                                       ├──▶ LimitStore (SharedPreferences): limits and rule state
-                                                       └──▶ usage_slices (Room): history for the Today screen
+ (usage access)        which app is in front?   (foreground service)     once per app,         badge / grey / pause / popup,
+                                                       │                  (core-model, pure)    for the app in front only
+                                                       ├──▶ LimitStore (SharedPreferences): limits and rule state, per app
+                                                       └──▶ usage_slices (Room): history for the Today screen, tagged by app
 ```
 
+- **`TrackedApp`** lists the apps, with their package names and default limits. Adding another
+  app is one line there.
 - **`LimitEngine`** holds all the rules as pure functions of (state, limits, time), and runs in
-  plain JVM tests (`LimitEngineTest`). Time only counts while Instagram is in front **and** no pause or
-  popup covers it.
-- A pause or popup you walk away from stays owed. It shows again the next time Instagram opens.
+  plain JVM tests (`LimitEngineTest`). Each app has its own state. Time only counts while that app
+  is in front **and** no pause or popup covers it.
+- A pause or popup you walk away from stays owed. It shows again the next time that app opens.
   Coming back within 30 s doesn't cost a new launch pause (copying a link, a quick reply).
-- While a pause or popup is up, Brainrot takes audio focus so the reel underneath goes quiet.
+- While a pause or popup is up, Brainrot takes audio focus so the reel or video underneath goes quiet.
 - **The grey** is a full-screen overlay at 55% opacity that passes every touch through. Android 12+
   only lets touches through another app's overlay at 80% opacity or less. To change the strength,
   edit `TINT_ALPHA` in [`OverlayHost.kt`](service/src/main/java/com/reeltracker/service/OverlayHost.kt).
@@ -119,23 +125,26 @@ The APK lands in `app/build/outputs/apk/debug/app-debug.apk`.
 
 | Module | What's in it | Android? |
 |---|---|---|
-| `core-model` | `LimitEngine` (the rules), `UsageDay` (4 AM days), `UsageStats` (sessions, hourly minutes), plus tests | No, pure Kotlin |
-| `core-data` | Room database: `usage_slices` (Instagram time) and the old reel tables, kept as history | Yes |
+| `core-model` | `TrackedApp` (the apps and their defaults), `LimitEngine` (the rules), `UsageDay` (4 AM days), `UsageStats` (sessions, hourly minutes), plus tests | No, pure Kotlin |
+| `core-data` | Room database: `usage_slices` (time per app) and the old reel tables, kept as history | Yes |
 | `service` | `UsageService`, `ForegroundWatcher`, `OverlayHost`, `PauseView`, `SessionPopupView`, `BrainCounterView` (badge), `LimitStore`, widget | Yes |
 | `app` | Compose UI: setup, Today screen, limits | Yes |
 | `core-detect`, `spike` | The old accessibility-based Reels detector. No longer used by the app | |
 
 Rule constants (session gap, pause lengths, popup interval) are at the top of
 [`LimitEngine.kt`](core-model/src/main/kotlin/com/reeltracker/limits/LimitEngine.kt). Default
-limits are in [`LimitStore.kt`](service/src/main/java/com/reeltracker/service/LimitStore.kt).
+limits are in [`TrackedApp.kt`](core-model/src/main/kotlin/com/reeltracker/limits/TrackedApp.kt).
 
 ---
 
 ## Known limitations
 
-- **All of Instagram counts, not just Reels.** Without accessibility, Android won't say which tab
-  is open.
-- **Instagram in a browser isn't tracked.**
+- **All of Instagram counts, not just Reels, and all of YouTube, not just Shorts.** Without
+  accessibility, Android won't say which tab is open or what's playing. An hour of Shorts and an
+  hour-long video count the same.
+- **Only the official YouTube app counts.** YouTube in a browser, modded clients (ReVanced),
+  YouTube Kids, casting to a TV, and picture-in-picture or background play aren't tracked. Neither
+  is Instagram in a browser.
 - **It can be bypassed** by revoking a permission or uninstalling. This is a speed bump, not a lock.
 - **The service can be killed** by aggressive battery managers. Set battery use to Unrestricted.
 - **Package name** is still `com.reeltracker` from the project's original name. Changing it would

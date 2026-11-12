@@ -11,8 +11,8 @@ import android.os.PowerManager
  * apps don't object to usage access.
  *
  * Each poll reads only the events since the last one. The log can only say which activity
- * resumed or paused, never what is on screen, which is why everything counts all of Instagram
- * rather than only Reels.
+ * resumed or paused, never what is on screen, which is why all of Instagram counts rather than
+ * only Reels, and all of YouTube rather than only Shorts.
  */
 internal class ForegroundWatcher(context: Context) {
 
@@ -25,10 +25,10 @@ internal class ForegroundWatcher(context: Context) {
     private var resumedPkg: String? = null
     private var resumedClass: String? = null
 
-    /** True when [pkg] is the resumed app, the screen is on and the phone is unlocked. */
-    fun isInFront(pkg: String, now: Long): Boolean {
+    /** The resumed app's package, or null when the screen is off or the phone is locked. */
+    fun front(now: Long): String? {
         poll(now)
-        return resumedPkg == pkg && power.isInteractive && !keyguard.isKeyguardLocked
+        return resumedPkg?.takeIf { power.isInteractive && !keyguard.isKeyguardLocked }
     }
 
     private fun poll(now: Long) {

@@ -16,9 +16,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * Full-screen pause over Instagram. Counts down [seconds], then calls [onDone] once and the
+ * Full-screen pause over a tracked app. Counts down [seconds], then calls [onDone] once and the
  * service lifts it. "Never mind" and Back call [onLeave], which goes to the home screen; the
- * pause stays owed and starts over the next time Instagram opens.
+ * pause stays owed and starts over the next time [appLabel] opens.
  *
  * The end time is fixed when the view is made, so taking the window down and putting it back
  * (to restack it under a new badge) doesn't restart the countdown.
@@ -27,6 +27,7 @@ import android.widget.TextView
 internal class PauseView(
     context: Context,
     private val seconds: Int,
+    appLabel: String,
     subtitle: String,
     private val onDone: () -> Unit,
     private val onLeave: () -> Unit,
@@ -55,7 +56,7 @@ internal class PauseView(
     init {
         setBackgroundColor(0xF20F0F10.toInt())
         isFocusableInTouchMode = true
-        isClickable = true // swallow every touch: nothing reaches Instagram underneath
+        isClickable = true // swallow every touch: nothing reaches the app underneath
 
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -75,7 +76,7 @@ internal class PauseView(
             gravity = Gravity.CENTER
             text = seconds.toString()
         })
-        column.addView(text("Instagram opens when this reaches zero.", 15f, 0xCCFFFFFF.toInt()))
+        column.addView(text("$appLabel opens when this reaches zero.", 15f, 0xCCFFFFFF.toInt()))
         column.addView(text(subtitle, 14f, 0x99FFFFFF.toInt()).apply { setPadding(0, dp(8), 0, dp(36)) })
         column.addView(Button(context).apply {
             text = "Never mind, take me out"
@@ -90,7 +91,7 @@ internal class PauseView(
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         addView(column, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
-        contentDescription = "Pause. Instagram opens in $seconds seconds."
+        contentDescription = "Pause. $appLabel opens in $seconds seconds."
     }
 
     override fun onAttachedToWindow() {

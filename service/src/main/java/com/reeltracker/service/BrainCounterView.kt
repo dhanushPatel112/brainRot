@@ -22,7 +22,7 @@ import android.widget.TextView
 import kotlin.random.Random
 
 /**
- * The floating timer badge: a brain that rots as today's Instagram minutes climb, over a pill
+ * The floating timer badge: a brain that rots as today's Instagram and YouTube minutes climb, over a pill
  * that reads "today · this session".
  *
  *  - idle      the brain breathes
@@ -100,7 +100,7 @@ internal class BrainCounterView(context: Context) : FrameLayout(context) {
             )
         }
 
-        contentDescription = context.getString(R.string.overlay_description, "–")
+        contentDescription = context.getString(R.string.overlay_description, "", "–")
     }
 
     override fun onAttachedToWindow() {
@@ -117,13 +117,14 @@ internal class BrainCounterView(context: Context) : FrameLayout(context) {
     }
 
     /**
-     * Shows today's [totalMinutes] as the brain's stage and [label] in the pill. The first value
+     * Shows today's [totalMinutes] (every tracked app together) as the brain's stage and [label]
+     * (the open app's own time) in the pill. The first value
      * after attaching is shown without fuss; after that each new minute plays the drip, and
      * crossing a threshold plays the stage-up.
      */
-    fun setUsage(totalMinutes: Int, label: String) {
+    fun setUsage(totalMinutes: Int, appLabel: String, label: String) {
         badge.text = label
-        contentDescription = context.getString(R.string.overlay_description, label)
+        contentDescription = context.getString(R.string.overlay_description, appLabel, label)
 
         val previous = minutes
         minutes = totalMinutes

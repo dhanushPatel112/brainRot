@@ -4,44 +4,53 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.reeltracker.limits.LimitState
 import com.reeltracker.limits.Limits
+import com.reeltracker.limits.TrackedApp
 
 /**
- * The limits you set, and the rules' state, in SharedPreferences.
+ * One app's limits, and its rules' state, in SharedPreferences.
  *
  * Changing a limit never applies today: the new value waits as "pending" and becomes active at
  * the next 4 AM, so the budget can't be raised in a weak moment.
+ *
+ * Instagram keeps the unprefixed keys from before YouTube was added, so an update keeps its
+ * limits and today's count. Every other app prefixes its keys with its id.
  */
-class LimitStore(context: Context) {
+class LimitStore(context: Context, val app: TrackedApp) {
 
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private val prefix = if (app == TrackedApp.INSTAGRAM) "" else "${app.id}_"
+
+    private val defaultBudgetMin = app.defaultBudgetMin
+    private val defaultCapMin = app.defaultCapMin
 
     // ------------------------------------------------------------------ limits
 
     /** The limits in force on [day], promoting a pending change once its day has come. */
     fun limits(day: Long): Limits {
-        val from = prefs.getLong(PENDING_FROM, NONE)
+        val from = prefs.getLong(k(PENDING_FROM), NONE)
         if (from != NONE && day >= from) {
             prefs.edit()
-                .putInt(BUDGET_MIN, prefs.getInt(PENDING_BUDGET_MIN, DEFAULT_BUDGET_MIN))
-                .putInt(CAP_MIN, prefs.getInt(PENDING_CAP_MIN, DEFAULT_CAP_MIN))
-                .remove(PENDING_FROM).remove(PENDING_BUDGET_MIN).remove(PENDING_CAP_MIN)
+                .putInt(k(BUDGET_MIN), prefs.getInt(k(PENDING_BUDGET_MIN), defaultBudgetMin))
+                .putInt(k(CAP_MIN), prefs.getInt(k(PENDING_CAP_MIN), defaultCapMin))
+                .remove(k(PENDING_FROM)).remove(k(PENDING_BUDGET_MIN)).remove(k(PENDING_CAP_MIN))
                 .apply()
         }
         return active()
     }
 
     private fun active() = Limits(
-        dailyBudgetMs = prefs.getInt(BUDGET_MIN, DEFAULT_BUDGET_MIN) * 60_000L,
-        sessionCapMs = prefs.getInt(CAP_MIN, DEFAULT_CAP_MIN) * 60_000L,
+        dailyBudgetMs = prefs.getInt(k(BUDGET_MIN), defaultBudgetMin) * 60_000L,
+        sessionCapMs = prefs.getInt(k(CAP_MIN), defaultCapMin) * 60_000L,
     )
 
     /** The change waiting for tomorrow, if any. */
     fun pending(): Limits? =
-        if (prefs.getLong(PENDING_FROM, NONE) == NONE) null
+        if (prefs.getLong(k(PENDING_FROM), NONE) == NONE) null
         else Limits(
-            dailyBudgetMs = prefs.getInt(PENDING_BUDGET_MIN, DEFAULT_BUDGET_MIN) * 60_000L,
-            sessionCapMs = prefs.getInt(PENDING_CAP_MIN, DEFAULT_CAP_MIN) * 60_000L,
+            dailyBudgetMs = prefs.getInt(k(PENDING_BUDGET_MIN), defaultBudgetMin) * 60_000L,
+            sessionCapMs = prefs.getInt(k(PENDING_CAP_MIN), defaultCapMin) * 60_000L,
         )
 
     /** Schedules [limits] for the day after [today]. Asking for today's values cancels the change. */
@@ -49,11 +58,11 @@ class LimitStore(context: Context) {
         limits(today) // promote anything already due, so "active" is current
         val e = prefs.edit()
         if (limits == active()) {
-            e.remove(PENDING_FROM).remove(PENDING_BUDGET_MIN).remove(PENDING_CAP_MIN)
+            e.remove(k(PENDING_FROM)).remove(k(PENDING_BUDGET_MIN)).remove(k(PENDING_CAP_MIN))
         } else {
-            e.putLong(PENDING_FROM, today + 1)
-                .putInt(PENDING_BUDGET_MIN, (limits.dailyBudgetMs / 60_000).toInt())
-                .putInt(PENDING_CAP_MIN, (limits.sessionCapMs / 60_000).toInt())
+            e.putLong(k(PENDING_FROM), today + 1)
+                .putInt(k(PENDING_BUDGET_MIN), (limits.dailyBudgetMs / 60_000).toInt())
+                .putInt(k(PENDING_CAP_MIN), (limits.sessionCapMs / 60_000).toInt())
         }
         e.apply()
     }
@@ -62,19 +71,19 @@ class LimitStore(context: Context) {
 
     /** Saved state, or a fresh one when nothing is saved for [day] yet. */
     fun loadState(day: Long): LimitState {
-        val saved = prefs.getLong(S_DAY, NONE)
+        val saved = prefs.getLong(k(S_DAY), NONE)
         if (saved == NONE) return LimitState(day = day)
         return LimitState(
             day = saved,
-            usedMs = prefs.getLong(S_USED, 0),
-            pausesDone = prefs.getInt(S_PAUSES, 0),
-            nextPauseAtUsedMs = prefs.long(S_NEXT_PAUSE),
-            pendingPauseS = prefs.getInt(S_PENDING_PAUSE, -1).takeIf { it >= 0 },
-            sessionUsedMs = prefs.getLong(S_SESSION, 0),
-            nextPopupAtSessionMs = prefs.long(S_NEXT_POPUP),
-            popupPending = prefs.getBoolean(S_POPUP, false),
-            lastActiveAt = prefs.long(S_LAST_ACTIVE),
-            // Not restored: after a restart the service has to see Instagram again to count.
+            usedMs = prefs.getLong(k(S_USED), 0),
+            pausesDone = prefs.getInt(k(S_PAUSES), 0),
+            nextPauseAtUsedMs = prefs.long(k(S_NEXT_PAUSE)),
+            pendingPauseS = prefs.getInt(k(S_PENDING_PAUSE), -1).takeIf { it >= 0 },
+            sessionUsedMs = prefs.getLong(k(S_SESSION), 0),
+            nextPopupAtSessionMs = prefs.long(k(S_NEXT_POPUP)),
+            popupPending = prefs.getBoolean(k(S_POPUP), false),
+            lastActiveAt = prefs.long(k(S_LAST_ACTIVE)),
+            // Not restored: after a restart the service has to see the app again to count.
             lastTickAt = null,
             foreground = false,
         ).let { if (it.day != day) it.newDay(day) else it }
@@ -82,24 +91,23 @@ class LimitStore(context: Context) {
 
     fun saveState(s: LimitState) {
         prefs.edit()
-            .putLong(S_DAY, s.day)
-            .putLong(S_USED, s.usedMs)
-            .putInt(S_PAUSES, s.pausesDone)
-            .putLong(S_NEXT_PAUSE, s.nextPauseAtUsedMs ?: NONE)
-            .putInt(S_PENDING_PAUSE, s.pendingPauseS ?: -1)
-            .putLong(S_SESSION, s.sessionUsedMs)
-            .putLong(S_NEXT_POPUP, s.nextPopupAtSessionMs ?: NONE)
-            .putBoolean(S_POPUP, s.popupPending)
-            .putLong(S_LAST_ACTIVE, s.lastActiveAt ?: NONE)
+            .putLong(k(S_DAY), s.day)
+            .putLong(k(S_USED), s.usedMs)
+            .putInt(k(S_PAUSES), s.pausesDone)
+            .putLong(k(S_NEXT_PAUSE), s.nextPauseAtUsedMs ?: NONE)
+            .putInt(k(S_PENDING_PAUSE), s.pendingPauseS ?: -1)
+            .putLong(k(S_SESSION), s.sessionUsedMs)
+            .putLong(k(S_NEXT_POPUP), s.nextPopupAtSessionMs ?: NONE)
+            .putBoolean(k(S_POPUP), s.popupPending)
+            .putLong(k(S_LAST_ACTIVE), s.lastActiveAt ?: NONE)
             .apply()
     }
+
+    private fun k(key: String) = prefix + key
 
     private fun SharedPreferences.long(key: String): Long? = getLong(key, NONE).takeIf { it != NONE }
 
     companion object {
-        const val DEFAULT_BUDGET_MIN = 30
-        const val DEFAULT_CAP_MIN = 10
-
         private const val PREFS = "limits"
         private const val NONE = Long.MIN_VALUE
 

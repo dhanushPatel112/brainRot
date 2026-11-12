@@ -10,12 +10,14 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import com.reeltracker.limits.Badge
 import com.reeltracker.limits.Block
+import com.reeltracker.limits.Limits
 import com.reeltracker.limits.Screen
+import com.reeltracker.limits.TrackedApp
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Draws a [Screen] over Instagram as up to three overlay windows, bottom to top:
+ * Draws a [Screen] over the tracked app in front as up to three overlay windows, bottom to top:
  *
  *  1. grey tint: full screen, never touchable, so chats and taps go straight through
  *  2. timer badge: the brain and "today · session", draggable
@@ -42,25 +44,34 @@ internal class OverlayHost(
     /** Index = z-order. */
     private val layers = arrayOfNulls<Layer>(3)
     private var shownBlock: Block? = null
+    private var blockApp: TrackedApp? = null
 
-    fun render(screen: Screen, limits: com.reeltracker.limits.Limits) {
+    /**
+     * @param app the app in front, which [screen] and [limits] belong to
+     * @param totalMinutes every tracked app's minutes today together, for the brain's stage
+     */
+    fun render(app: TrackedApp, screen: Screen, limits: Limits, totalMinutes: Int) {
         setLayer(TINT, screen.grey) { tint() }
 
         val badge = screen.badge
         setLayer(BADGE, badge != null) { badge() }
-        if (badge != null) (layers[BADGE]?.view as? BrainCounterView)?.setUsage((badge.todayMs / 60_000).toInt(), badge.text)
+        if (badge != null) (layers[BADGE]?.view as? BrainCounterView)?.setUsage(totalMinutes, app.label, badge.text)
 
+        // Switching straight from one app to the other can owe the same kind of block, worded
+        // for the other app, so a change of app rebuilds it too.
         val block = screen.block
-        if (block != shownBlock) {
+        if (block != shownBlock || (block != null && app != blockApp)) {
             remove(BLOCK)
             shownBlock = block
-            if (block != null) setLayer(BLOCK, true) { block(block, badge, limits) }
+            blockApp = app
+            if (block != null) setLayer(BLOCK, true) { block(app, block, badge, limits) }
         }
     }
 
     fun clear() {
         for (i in layers.indices.reversed()) remove(i)
         shownBlock = null
+        blockApp = null
     }
 
     private fun setLayer(index: Int, on: Boolean, make: () -> Layer) {
@@ -138,25 +149,27 @@ internal class OverlayHost(
         return Layer(v, lp)
     }
 
-    private fun block(block: Block, badge: Badge?, limits: com.reeltracker.limits.Limits): Layer {
+    private fun block(app: TrackedApp, block: Block, badge: Badge?, limits: Limits): Layer {
         val today = badge?.let { Badge.short(it.todayMs) } ?: "0m"
         val v: View = when (block) {
             is Block.Pause -> PauseView(
                 context,
                 seconds = block.seconds,
-                subtitle = "$today on Instagram today. Your budget is ${Badge.short(limits.dailyBudgetMs)}.",
+                appLabel = app.label,
+                subtitle = "$today on ${app.label} today. Your budget is ${Badge.short(limits.dailyBudgetMs)}.",
                 onDone = actions::pauseDone,
                 onLeave = actions::leave,
             )
             Block.SessionPopup -> SessionPopupView(
                 context,
+                appLabel = app.label,
                 capMinutes = (limits.sessionCapMs / 60_000).toInt(),
                 sessionLabel = badge?.let { Badge.short(it.sessionMs) } ?: "",
                 onContinue = actions::popupContinue,
                 onLeave = actions::leave,
             )
         }
-        // Focusable, so Back comes to us instead of Instagram.
+        // Focusable, so Back comes to us instead of the app.
         val lp = params(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -256,7 +269,7 @@ internal class OverlayHost(
         const val BADGE = 1
         const val BLOCK = 2
 
-        /** Neutral grey at 55%: washes the colour out of Reels, keeps chat text readable. */
+        /** Neutral grey at 55%: washes the colour out of Reels and videos, keeps chat text readable. */
         const val TINT_COLOR = 0xFF808080.toInt()
         const val TINT_ALPHA = 0.55f
 

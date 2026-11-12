@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="overlay_description">Instagram today and this session: %1$s. Drag to move.</string>
-    <string name="widget_label">Instagram today</string>
-    <string name="widget_description">Today\'s Instagram time, and how rotten your brain is.</string>
-    <string name="widget_reels_today">on Instagram</string>
+    <string name="overlay_description">%1$s today and this session: %2$s. Drag to move.</string>
+    <string name="widget_label">Brainrot today</string>
+    <string name="widget_description">Today\'s Instagram and YouTube time, and how rotten your brain is.</string>
+    <string name="widget_reels_today">today</string>
 </resources>

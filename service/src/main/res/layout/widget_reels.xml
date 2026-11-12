@@ -40,4 +40,15 @@
         android:text="@string/widget_reels_today"
         android:textColor="#B3FFFFFF"
         android:textSize="12sp" />
+
+    <!-- Each app's own minutes, e.g. "IG 23m · YT 40m". -->
+    <TextView
+        android:id="@+id/widget_split"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:fontFeatureSettings="tnum"
+        android:maxLines="1"
+        android:textColor="#80FFFFFF"
+        android:textSize="11sp" />
 </LinearLayout>

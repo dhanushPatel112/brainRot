@@ -26,11 +26,12 @@ import kotlin.random.Random
  *  - the buttons' order, and whether they sit side by side or stacked
  *  - the "keep going" button only wakes up after 2–4 s, and one time in three it must be held
  *
- * [onContinue] is the only way to Instagram. [onLeave] (the other button, or Back) goes home.
+ * [onContinue] is the only way back to [appLabel]. [onLeave] (the other button, or Back) goes home.
  */
 @SuppressLint("ViewConstructor")
 internal class SessionPopupView(
     context: Context,
+    appLabel: String,
     capMinutes: Int,
     sessionLabel: String,
     private val onContinue: () -> Unit,
@@ -63,12 +64,12 @@ internal class SessionPopupView(
             }
         }
         card.addView(text("$capMinutes minutes of active use", 22f, look.text, bold = true))
-        card.addView(text(BODIES.random(random), 15f, look.muted).apply { setPadding(0, dp(8), 0, 0) })
+        card.addView(text(BODIES.random(random).replace(APP, appLabel), 15f, look.muted).apply { setPadding(0, dp(8), 0, 0) })
         card.addView(text("This session: $sessionLabel", 13f, look.muted).apply { setPadding(0, dp(6), 0, dp(18)) })
 
         val wasteFilled = random.nextBoolean()
         waste = button(if (hold) "Hold: $wasteLabel" else wasteLabel, filled = wasteFilled)
-        val leave = button(LEAVE_LABELS.random(random), filled = !wasteFilled).apply { setOnClickListener { onLeave() } }
+        val leave = button(LEAVE_LABELS.random(random).replace(APP, appLabel), filled = !wasteFilled).apply { setOnClickListener { onLeave() } }
         armWaste()
 
         val sideBySide = random.nextBoolean()
@@ -99,7 +100,7 @@ internal class SessionPopupView(
             topMargin = dp(random.nextInt(48, 121))
             bottomMargin = dp(random.nextInt(48, 121))
         })
-        contentDescription = "$capMinutes minutes of active use on Instagram."
+        contentDescription = "$capMinutes minutes of active use on $appLabel."
     }
 
     /** Greyed out until [armAt], then either a tap or a 2-second hold goes through. */
@@ -206,8 +207,11 @@ internal class SessionPopupView(
             "5 more minutes of nothing",
         )
 
+        /** Stands for the app's name in [LEAVE_LABELS] and [BODIES]. */
+        const val APP = "{app}"
+
         val LEAVE_LABELS = listOf(
-            "Close Instagram",
+            "Close $APP",
             "I'm done",
             "Get me out",
             "Take a break",
@@ -215,7 +219,7 @@ internal class SessionPopupView(
         )
 
         val BODIES = listOf(
-            "Was this what you opened Instagram for?",
+            "Was this what you opened $APP for?",
             "Everything from here on is in grey.",
             "The next check-in is 5 minutes away.",
             "Your brain called. It wants a break.",
